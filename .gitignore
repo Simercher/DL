@@ -1,0 +1,38 @@
+# macOS specific files
+.DS_Store
+
+# Archives (already present)
+*.zip
+
+# Git directory (standard)
+.git/
+
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+
+# Log files
+*.log
+Unetlog.txt
+
+# Generated images (consider adding exceptions if specific images should be tracked)
+*.png
+
+# Saved models directory
+saved_models/
+
+# Dataset directory (often large and downloaded separately)
+dataset/
+
+# Virtual environment folders
+venv/
+.venv/
+env/
+.env/
+
+# IDE specific folders
+.vscode/
+.idea/
+
+*.pdf
