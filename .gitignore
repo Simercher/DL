@@ -23,6 +23,7 @@ wandb/
 # Saved models directory
 saved_models/
 results/
+eval_videos/
 
 # Dataset directory (often large and downloaded separately)
 dataset/
