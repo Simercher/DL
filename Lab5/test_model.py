@@ -14,21 +14,28 @@ import argparse
 class DQN(nn.Module):
     def __init__(self, input_channels, num_actions):
         super(DQN, self).__init__()
+        # self.network = nn.Sequential(
+        #     nn.Conv2d(input_channels, 32, kernel_size=8, stride=4),
+        #     nn.ReLU(),
+        #     nn.Conv2d(32, 64, kernel_size=4, stride=2),
+        #     nn.ReLU(),
+        #     nn.Conv2d(64, 64, kernel_size=3, stride=1),
+        #     nn.ReLU(),
+        #     nn.Flatten(),
+        #     nn.Linear(64 * 7 * 7, 512),
+        #     nn.ReLU(),
+        #     nn.Linear(512, num_actions)
+        # )
         self.network = nn.Sequential(
-            nn.Conv2d(input_channels, 32, kernel_size=8, stride=4),
-            nn.ReLU(),
-            nn.Conv2d(32, 64, kernel_size=4, stride=2),
-            nn.ReLU(),
-            nn.Conv2d(64, 64, kernel_size=3, stride=1),
-            nn.ReLU(),
-            nn.Flatten(),
-            nn.Linear(64 * 7 * 7, 512),
-            nn.ReLU(),
-            nn.Linear(512, num_actions)
+           nn.Linear(input_channels, 64),
+           nn.ReLU(),
+           nn.Linear(64, 64),
+           nn.ReLU(),
+           nn.Linear(64, num_actions)
         )
 
     def forward(self, x):
-        return self.network(x / 255.0)
+        return self.network(x)
 class AtariPreprocessor:
     def __init__(self, frame_stack=4):
         self.frame_stack = frame_stack
@@ -60,11 +67,11 @@ def evaluate(args):
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
 
-    env = gym.make("ALE/Pong-v5", render_mode="rgb_array")
+    env = gym.make("CartPole-v1", render_mode="rgb_array")# ALE/Pong-v5
     env.action_space.seed(args.seed)
     env.observation_space.seed(args.seed)
 
-    preprocessor = AtariPreprocessor()
+    # preprocessor = AtariPreprocessor()
     num_actions = env.action_space.n
 
     model = DQN(4, num_actions).to(device)
@@ -72,10 +79,12 @@ def evaluate(args):
     model.eval()
 
     os.makedirs(args.output_dir, exist_ok=True)
+    reward_list = []
 
     for ep in range(args.episodes):
         obs, _ = env.reset(seed=args.seed + ep)
-        state = preprocessor.reset(obs)
+        # state = preprocessor.reset(obs)
+        state = obs
         done = False
         total_reward = 0
         frames = []
@@ -92,20 +101,26 @@ def evaluate(args):
             next_obs, reward, terminated, truncated, _ = env.step(action)
             done = terminated or truncated
             total_reward += reward
-            state = preprocessor.step(next_obs)
+            # state = preprocessor.step(next_obs)
+            state = next_obs
             frame_idx += 1
 
         out_path = os.path.join(args.output_dir, f"eval_ep{ep}.mp4")
         with imageio.get_writer(out_path, fps=30) as video:
             for f in frames:
                 video.append_data(f)
+        reward_list.append(total_reward)
         print(f"Saved episode {ep} with total reward {total_reward} → {out_path}")
+    
+    avg_reward = sum(reward_list) / len(reward_list) if reward_list else 0
+    print(f"Average reward over {args.episodes} episodes: {avg_reward:.2f}")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model-path", type=str, required=True, help="Path to trained .pt model")
     parser.add_argument("--output-dir", type=str, default="./eval_videos")
-    parser.add_argument("--episodes", type=int, default=10)
+    parser.add_argument("--episodes", type=int, default=20)
     parser.add_argument("--seed", type=int, default=313551076, help="Random seed for evaluation")
     args = parser.parse_args()
     evaluate(args)

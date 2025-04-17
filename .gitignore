@@ -15,12 +15,14 @@ __pycache__/
 # Log files
 *.log
 Unetlog.txt
+wandb/
 
 # Generated images (consider adding exceptions if specific images should be tracked)
 *.png
 
 # Saved models directory
 saved_models/
+results/
 
 # Dataset directory (often large and downloaded separately)
 dataset/

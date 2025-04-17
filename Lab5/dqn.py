@@ -45,14 +45,11 @@ class DQN(nn.Module):
            nn.Linear(64, num_actions)
         )       
         ########## YOUR CODE HERE (5~10 lines) ##########
-        # self.dropout = nn.Dropout(0.2)
-        # self.batch_norm = nn.BatchNorm1d(64)
     
         
         ########## END OF YOUR CODE ##########
 
     def forward(self, x):
-        # x = self.batch_norm(x)
         return self.network(x)
 
 
@@ -129,7 +126,7 @@ class DQNAgent:
         self.q_net.apply(init_weights)
         self.target_net = DQN(self.num_states, self.num_actions).to(self.device)
         self.target_net.load_state_dict(self.q_net.state_dict())
-        self.optimizer = optim.Adam(self.q_net.parameters(), lr=args.lr)
+        self.optimizer = optim.Adam(self.q_net.parameters(), lr=args.lr, weight_decay=1e-4)
 
         self.batch_size = args.batch_size
         self.gamma = args.discount_factor
@@ -151,8 +148,10 @@ class DQNAgent:
         if random.random() < self.epsilon:
             return random.randint(0, self.num_actions - 1)
         state_tensor = torch.from_numpy(np.array(state)).float().unsqueeze(0).to(self.device)
+        self.q_net.eval()
         with torch.no_grad():
             q_values = self.q_net(state_tensor)
+        self.q_net.train()
         return q_values.argmax().item()
 
     def run(self, episodes=100000):
@@ -170,14 +169,16 @@ class DQNAgent:
                 action = self.select_action(state)
                 next_obs, reward, terminated, truncated, _ = self.env.step(action)
                 done = terminated or truncated
-                if done:
-                    break
                 
                 if self.env_name != "CartPole-v1":
                     next_state = self.preprocessor.step(next_obs)
                 else:
                     next_state = next_obs
+
                 self.memory.append((state, action, reward, next_state, done))
+                
+                if done:
+                    break
 
                 for _ in range(self.train_per_step):
                     self.train()
@@ -248,9 +249,9 @@ class DQNAgent:
             done = terminated or truncated
             total_reward += reward
             if self.env_name != "CartPole-v1":
-                next_state = self.preprocessor.step(next_obs)
+                state = self.preprocessor.step(next_obs)
             else:
-                next_state = next_obs
+                state = next_obs
 
         return total_reward
 
@@ -268,10 +269,12 @@ class DQNAgent:
         ########## YOUR CODE HERE (<5 lines) ##########
         # Sample a mini-batch of (s,a,r,s',done) from the replay buffer
         
-        indices = np.random.choice(len(self.memory), self.batch_size, replace=False)
-        batch = [self.memory[i] for i in indices]
+        # indices = np.random.choice(len(self.memory), self.batch_size, replace=False)
+        # # print(indices)
+        # batch = [self.memory[i] for i in indices]
+        # states, actions, rewards, next_states, dones = zip(*batch)
+        batch = random.sample(self.memory, self.batch_size)
         states, actions, rewards, next_states, dones = zip(*batch)
-      
             
         ########## END OF YOUR CODE ##########
 
@@ -283,23 +286,17 @@ class DQNAgent:
         rewards = torch.tensor(rewards, dtype=torch.float32).to(self.device)
         dones = torch.tensor(dones, dtype=torch.float32).to(self.device)
         q_values = self.q_net(states).gather(1, actions.unsqueeze(1)).squeeze(1)
-        
+
         ########## YOUR CODE HERE (~10 lines) ##########
         # Implement the loss function of DQN and the gradient updates 
       
         next_q_values = self.target_net(next_states).max(1)[0]
         expected_q_values = rewards + (1 - dones) * self.discount_factor * next_q_values
-        loss = F.mse_loss(q_values, expected_q_values.detach())
-        
-
-        wandb.log({
-            "Loss": loss.item(),
-            "Q Mean": q_values.mean().item(),
-            "Q Std": q_values.std().item()
-        })
+        loss = nn.MSELoss()(q_values, expected_q_values.detach())# + self.alpha * q_clip_penalty
       
         self.optimizer.zero_grad()
         loss.backward()
+        # torch.nn.utils.clip_grad_norm_(self.q_net.parameters(), max_norm=1.0)
         self.optimizer.step()
         ########## END OF YOUR CODE ##########  
 
@@ -309,21 +306,27 @@ class DQNAgent:
         # NOTE: Enable this part if "loss" is defined
         if self.train_count % 1000 == 0:
            print(f"[Train #{self.train_count}] Loss: {loss.item():.4f} Q mean: {q_values.mean().item():.3f} std: {q_values.std().item():.3f}")
+           wandb.log({
+                # "Moving Average Reward": self.moving_average_reward,
+                "Loss": loss.item(),
+                "Q Mean": q_values.mean().item(),
+                "Q Std": q_values.std().item()
+            })
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--save-dir", type=str, default="./results")
     parser.add_argument("--wandb-run-name", type=str, default="cartpole-run")
-    parser.add_argument("--batch-size", type=int, default=32)
-    parser.add_argument("--memory-size", type=int, default=100000)
-    parser.add_argument("--lr", type=float, default=0.0001)
+    parser.add_argument("--batch-size", type=int, default=256)
+    parser.add_argument("--memory-size", type=int, default=10000)
+    parser.add_argument("--lr", type=float, default=0.00001)
     parser.add_argument("--discount-factor", type=float, default=0.99)
     parser.add_argument("--epsilon-start", type=float, default=1.0)
-    parser.add_argument("--epsilon-decay", type=float, default=0.999999)
+    parser.add_argument("--epsilon-decay", type=float, default=0.99999)
     parser.add_argument("--epsilon-min", type=float, default=0.05)
-    parser.add_argument("--target-update-frequency", type=int, default=1000)
-    parser.add_argument("--replay-start-size", type=int, default=50000)
+    parser.add_argument("--target-update-frequency", type=int, default=5000)
+    parser.add_argument("--replay-start-size", type=int, default=10000)
     parser.add_argument("--max-episode-steps", type=int, default=10000)
     parser.add_argument("--train-per-step", type=int, default=1)
     parser.add_argument("--env-name", type=str, default="CartPole-v1")
